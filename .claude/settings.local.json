@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild -scheme ShareBill -destination 'platform=iOS Simulator,name=iPhone 16' build)",
+      "Bash(xcodebuild:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)"
+    ]
+  }
+}
