@@ -23,16 +23,27 @@ struct SettingsView: View {
             List {
                 if let user = auth.user {
                     Section("账户") {
-                        HStack {
-                            Image(systemName: "person.circle.fill")
-                                .font(.largeTitle)
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading) {
-                                Text(user.displayName ?? "用户")
-                                    .font(.headline)
-                                Text(user.email ?? "")
-                                    .font(.caption)
+                        HStack(spacing: 16) {
+                            if let avatarImage = auth.userProfile?.avatarImage {
+                                Image(uiImage: avatarImage)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 60, height: 60)
+                                    .clipShape(Circle())
+                            } else {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.system(size: 60))
                                     .foregroundStyle(.secondary)
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(auth.userProfile?.displayName ?? user.displayName ?? "用户")
+                                    .font(.headline)
+                                if let username = auth.userProfile?.username {
+                                    Text("@\(username)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                         .padding(.vertical, 4)

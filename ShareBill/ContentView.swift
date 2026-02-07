@@ -61,6 +61,7 @@ struct ContentView: View {
                     showingAddLedger: { sheetType = .addLedger },
                     editingLedger: { ledger in sheetType = .editLedger(ledger) }
                 )
+                .environmentObject(auth)
                 .environmentObject(ledgerStore)
 
             case .addLedger:
