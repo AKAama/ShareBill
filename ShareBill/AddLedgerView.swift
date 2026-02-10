@@ -1,34 +1,25 @@
 import SwiftUI
+import FirebaseAuth
 
 struct AddLedgerView: View {
     @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var auth: AuthManager
     @State private var title: String = ""
     @State private var participantName: String = ""
     @State private var participants: [Person] = []
     @State private var showingDeleteBlocked = false
     @State private var blockedName: String = ""
+    @State private var isLoading = false
+    @State private var errorMessage: String?
 
     var onSave: (Ledger) -> Void
-    private let existingId: UUID?
-    private let protectedParticipantIds: Set<UUID>
+    private let existingLedger: Ledger?
 
     init(ledger: Ledger? = nil, onSave: @escaping (Ledger) -> Void) {
         self.onSave = onSave
-        self.existingId = ledger?.id
+        self.existingLedger = ledger
         _title = State(initialValue: ledger?.title ?? "")
         _participants = State(initialValue: ledger?.participants ?? [])
-        if let ledger = ledger {
-            var ids: Set<UUID> = []
-            for expense in ledger.expenses {
-                ids.insert(expense.payer.id)
-                for person in expense.participants {
-                    ids.insert(person.id)
-                }
-            }
-            self.protectedParticipantIds = ids
-        } else {
-            self.protectedParticipantIds = []
-        }
     }
 
     var body: some View {
@@ -59,13 +50,12 @@ struct AddLedgerView: View {
                                     deleteParticipant(participant)
                                 }
                                 .foregroundStyle(.red)
-                                .disabled(isProtected(participant))
                             }
                         }
                     }
                 }
             }
-            .navigationTitle(existingId == nil ? "新建账本" : "编辑账本")
+            .navigationTitle(existingLedger == nil ? "新建账本" : "编辑账本")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") {
@@ -76,13 +66,16 @@ struct AddLedgerView: View {
                     Button("保存") {
                         saveLedger()
                     }
-                    .disabled(title.isEmpty)
+                    .disabled(title.isEmpty || isLoading)
                 }
             }
-            .alert("无法删除", isPresented: $showingDeleteBlocked) {
-                Button("知道了", role: .cancel) {}
-            } message: {
-                Text("「\(blockedName)」已出现在账单中，无法删除。")
+            .overlay {
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black.opacity(0.2))
+                }
             }
         }
     }
@@ -95,31 +88,42 @@ struct AddLedgerView: View {
     }
 
     private func deleteParticipant(_ participant: Person) {
-        if isProtected(participant) {
-            blockedName = participant.name
-            showingDeleteBlocked = true
-        } else {
-            participants.removeAll { $0.id == participant.id }
-        }
-    }
-
-    private func isProtected(_ participant: Person) -> Bool {
-        protectedParticipantIds.contains(participant.id)
+        participants.removeAll { $0.id == participant.id }
     }
 
     private func saveLedger() {
-        guard !title.isEmpty else { return }
-        let ledger = Ledger(
-            id: existingId ?? UUID(),
-            title: title,
-            participants: participants,
-            expenses: []
-        )
+        guard let userId = auth.user?.uid else { return }
+
+        isLoading = true
+
+        let ledger: Ledger
+        if let existing = existingLedger {
+            ledger = Ledger(
+                id: existing.id,
+                title: title,
+                ownerId: existing.ownerId,
+                memberIds: existing.memberIds,
+                participants: participants,
+                expenses: existing.expenses
+            )
+        } else {
+            ledger = Ledger(
+                id: UUID(),
+                title: title,
+                ownerId: userId,
+                memberIds: [],
+                participants: participants,
+                expenses: []
+            )
+        }
+
         onSave(ledger)
+        isLoading = false
         dismiss()
     }
 }
 
 #Preview {
     AddLedgerView { _ in }
+        .environmentObject(AuthManager())
 }

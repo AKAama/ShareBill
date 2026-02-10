@@ -18,6 +18,7 @@ struct ContentView: View {
         case addLedger
         case addExpense
         case editLedger(Ledger)
+        case memberManagement(Ledger)
 
         var id: String {
             switch self {
@@ -25,6 +26,7 @@ struct ContentView: View {
             case .addLedger: return "addLedger"
             case .addExpense: return "addExpense"
             case .editLedger(let ledger): return "editLedger-\(ledger.id.uuidString)"
+            case .memberManagement(let ledger): return "memberMgmt-\(ledger.id.uuidString)"
             }
         }
     }
@@ -67,8 +69,11 @@ struct ContentView: View {
             case .addLedger:
                 AddLedgerView { newLedger in
                     if !newLedger.title.isEmpty {
-                        ledgerStore.addLedger(newLedger)
-                        ledgerStore.setCurrentLedger(newLedger)
+                        ledgerStore.createLedger(newLedger) { error in
+                            if error == nil {
+                                ledgerStore.setCurrentLedger(newLedger)
+                            }
+                        }
                     }
                     sheetType = nil
                 }
@@ -94,6 +99,9 @@ struct ContentView: View {
                     }
                     sheetType = nil
                 }
+
+            case .memberManagement(let ledger):
+                AddMemberView(ledger: ledger)
             }
         }
     }
@@ -125,12 +133,21 @@ struct ContentView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        sheetType = .addExpense
+                    Menu {
+                        Button {
+                            sheetType = .addExpense
+                        } label: {
+                            Label("添加账单", systemImage: "plus.circle")
+                        }
+
+                        Button {
+                            sheetType = .memberManagement(ledgerStore.currentLedger!)
+                        } label: {
+                            Label("管理成员", systemImage: "person.badge.plus")
+                        }
                     } label: {
-                        Image(systemName: "plus")
+                        Image(systemName: "ellipsis.circle")
                     }
-                    .disabled(ledgerStore.currentLedger == nil)
                 }
             }
         }
