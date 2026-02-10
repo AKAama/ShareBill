@@ -51,7 +51,13 @@ class AuthManager: ObservableObject {
 
     private func fetchUserProfile(uid: String) {
         db.collection("users").document(uid).getDocument { [weak self] snapshot, error in
-            guard let self else { return }
+            guard let self = self else { return }
+
+            if let error = error {
+                print("获取用户信息失败: \(error.localizedDescription)")
+                return
+            }
+
             if let data = snapshot?.data() {
                 let base64Avatar = data["avatarBase64"] as? String
                 DispatchQueue.main.async {
@@ -62,7 +68,10 @@ class AuthManager: ObservableObject {
                         phone: data["phone"] as? String,
                         avatarBase64: base64Avatar
                     )
+                    print("用户信息加载成功: \(data["username"] as? String ?? "未知")")
                 }
+            } else {
+                print("用户文档不存在: \(uid)")
             }
         }
     }
@@ -74,17 +83,24 @@ class AuthManager: ObservableObject {
         if isValidEmail(identifier) {
             Auth.auth().signIn(withEmail: identifier, password: password) { [weak self] result, error in
                 DispatchQueue.main.async {
-                    self?.user = result?.user
+                    if let firebaseUser = result?.user {
+                        self?.user = firebaseUser
+                        self?.fetchUserProfile(uid: firebaseUser.uid)
+                    }
                     completion(error)
                 }
             }
         } else if isValidPhone(identifier) {
             // 手机号登录需要先查询对应的邮箱
             findEmailByPhone(phone: identifier) { [weak self] email, error in
+                guard let self = self else { return }
                 if let email = email {
                     Auth.auth().signIn(withEmail: email, password: password) { result, error in
                         DispatchQueue.main.async {
-                            self?.user = result?.user
+                            if let firebaseUser = result?.user {
+                                self.user = firebaseUser
+                                self.fetchUserProfile(uid: firebaseUser.uid)
+                            }
                             completion(error)
                         }
                     }
@@ -95,10 +111,14 @@ class AuthManager: ObservableObject {
         } else {
             // 用户名登录
             findEmailByUsername(username: identifier) { [weak self] email, error in
+                guard let self = self else { return }
                 if let email = email {
                     Auth.auth().signIn(withEmail: email, password: password) { result, error in
                         DispatchQueue.main.async {
-                            self?.user = result?.user
+                            if let firebaseUser = result?.user {
+                                self.user = firebaseUser
+                                self.fetchUserProfile(uid: firebaseUser.uid)
+                            }
                             completion(error)
                         }
                     }

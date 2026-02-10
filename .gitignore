@@ -1,0 +1,24 @@
+# Xcode
+.DS_Store
+DerivedData/
+*.xcuserstate
+
+# User-specific Xcode data
+xcuserdata/
+*.xcuserdatad/
+
+# Build
+build/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+
+# CocoaPods
+Pods/
+
+# Logs
+*.log
+

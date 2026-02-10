@@ -100,7 +100,7 @@ struct LedgerDrawerView: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Text("\(ledger.memberCount) 人")
+                    Text("\(ledger.participantCount) 人")
                     if !ledger.expenses.isEmpty {
                         Text("•")
                         Text("\(ledger.expenses.count) 笔")

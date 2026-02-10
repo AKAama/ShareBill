@@ -9,10 +9,13 @@ import Foundation
 struct Person: Identifiable, Codable, Hashable {
     let id: UUID
     let name: String
+    /// 已注册用户的 Firebase uid，本地参与者为 nil
+    let userId: String?
 
-    init(id: UUID = UUID(), name: String) {
+    init(id: UUID = UUID(), name: String, userId: String? = nil) {
         self.id = id
         self.name = name
+        self.userId = userId
     }
 }
 
@@ -56,7 +59,8 @@ struct Ledger: Identifiable, Codable {
         [ownerId] + memberIds
     }
 
-    var memberCount: Int {
-        1 + memberIds.count
+    /// 参与者数量（包含 owner 和所有 participants）
+    var participantCount: Int {
+        participants.count
     }
 }

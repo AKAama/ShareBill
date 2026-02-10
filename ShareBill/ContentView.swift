@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import FirebaseAuth
 struct ContentView: View {
     @StateObject var auth = AuthManager()
     @StateObject var ledgerStore = LedgerStore()
@@ -40,6 +41,12 @@ struct ContentView: View {
                             Label("账本", systemImage: "book.fill")
                         }
                         .tag(0)
+                        .onAppear {
+                            // 使用 Firebase Auth 直接获取当前用户，避免 auth.user 还没更新的问题
+                            if let userId = Auth.auth().currentUser?.uid {
+                                ledgerStore.bind(userId: userId)
+                            }
+                        }
 
                     SettingsView()
                         .tabItem {
@@ -68,15 +75,10 @@ struct ContentView: View {
 
             case .addLedger:
                 AddLedgerView { newLedger in
-                    if !newLedger.title.isEmpty {
-                        ledgerStore.createLedger(newLedger) { error in
-                            if error == nil {
-                                ledgerStore.setCurrentLedger(newLedger)
-                            }
-                        }
-                    }
-                    sheetType = nil
+                    // 回调由 AddLedgerView 自己处理
                 }
+                .environmentObject(auth)
+                .environmentObject(ledgerStore)
 
             case .addExpense:
                 if let ledger = ledgerStore.currentLedger {
@@ -99,6 +101,7 @@ struct ContentView: View {
                     }
                     sheetType = nil
                 }
+                .environmentObject(auth)
 
             case .memberManagement(let ledger):
                 AddMemberView(ledger: ledger)
@@ -151,6 +154,8 @@ struct ContentView: View {
                 }
             }
         }
+        .environmentObject(auth)
+        .environmentObject(ledgerStore)
     }
 
     private var emptyStateView: some View {

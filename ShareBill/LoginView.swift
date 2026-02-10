@@ -34,7 +34,7 @@ struct LoginView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("轻松分摊，愉快记账")
+                Text("轻松分摊，愉快记账，myhnb,zzynb")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 

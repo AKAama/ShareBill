@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import FirebaseFirestore
+import FirebaseAuth
 
 final class LedgerStore: ObservableObject {
     @Published private(set) var ledgers: [Ledger] = []
@@ -21,7 +22,10 @@ final class LedgerStore: ObservableObject {
         self.userId = userId
         stop()
 
-        // 监听用户参与的账本
+        print("=== LedgerStore.bind ===")
+        print("userId: \(userId)")
+
+        // 直接监听用户的 myLedgers 集合
         let userLedgersRef = db.collection("users").document(userId).collection("myLedgers")
 
         listener = userLedgersRef.addSnapshotListener { [weak self] snapshot, error in
@@ -34,24 +38,32 @@ final class LedgerStore: ObservableObject {
 
             guard let snapshot = snapshot else { return }
 
+            print("Ledger listener triggered, documents: \(snapshot.documents.count)")
+
             let ledgerIds = snapshot.documents.compactMap { doc -> String? in
-                guard let ledgerId = doc.data()["ledgerId"] as? String else { return nil }
-                return ledgerId
+                doc.data()["ledgerId"] as? String
             }
+
+            print("ledgerIds: \(ledgerIds)")
 
             self.fetchLedgers(ids: ledgerIds)
         }
     }
 
     private func fetchLedgers(ids: [String]) {
+        print("=== fetchLedgers ===")
+        print("ids: \(ids)")
+
         guard !ids.isEmpty else {
             ledgers = []
             currentLedger = nil
+            print("空账本列表")
             return
         }
 
         isLoading = true
 
+        // 批量获取所有账本详情
         let group = DispatchGroup()
         var fetchedLedgers: [Ledger] = []
 
@@ -62,9 +74,14 @@ final class LedgerStore: ObservableObject {
             db.collection("ledgers").document(id).getDocument { [weak self] snapshot, _ in
                 defer { group.leave() }
 
+                guard let self = self else { return }
+
                 if let doc = snapshot, doc.exists,
-                   let ledger = self?.ledgerFromDocument(doc, id: uuid) {
+                   let ledger = self.ledgerFromDocument(doc, id: uuid) {
+                    print("获取到账本: \(ledger.title)")
                     fetchedLedgers.append(ledger)
+                } else {
+                    print("文档不存在或解析失败: \(id)")
                 }
             }
         }
@@ -73,14 +90,20 @@ final class LedgerStore: ObservableObject {
             guard let self = self else { return }
             self.isLoading = false
             self.ledgers = fetchedLedgers.sorted { $0.title < $1.title }
+            print("ledgers 数量: \(self.ledgers.count)")
 
             // 恢复当前账本
             if let savedId = UserDefaults.standard.string(forKey: self.userDefaultsKey),
                let uuid = UUID(uuidString: savedId),
                let ledger = self.ledgers.first(where: { $0.id == uuid }) {
                 self.currentLedger = ledger
+                print("恢复当前账本 (saved): \(ledger.title)")
+            } else if let first = self.ledgers.first {
+                self.currentLedger = first
+                print("设置第一个账本为当前: \(first.title)")
             } else {
-                self.currentLedger = self.ledgers.first
+                self.currentLedger = nil
+                print("没有账本")
             }
 
             // 监听当前账本变化
@@ -126,26 +149,64 @@ final class LedgerStore: ObservableObject {
     // MARK: - 账本操作
 
     func createLedger(_ ledger: Ledger, completion: @escaping (Error?) -> Void) {
-        guard let userId else {
+        // 优先使用绑定的 userId，如果为空则从 Firebase Auth 获取
+        var validUserId = userId
+
+        if validUserId == nil {
+            validUserId = Auth.auth().currentUser?.uid
+        }
+
+        guard let userId = validUserId else {
             completion(NSError(domain: "LedgerStore", code: -1, userInfo: [NSLocalizedDescriptionKey: "未登录"]))
             return
         }
 
         let ledgerData = ledgerToData(ledger)
 
+        print("=== createLedger ===")
+        print("ledger.title: \(ledger.title)")
+        print("ledger.id: \(ledger.id.uuidString)")
+        print("userId: \(userId)")
+        print("participants: \(ledger.participants.map { ($0.name, $0.userId ?? "nil") })")
+
         db.collection("ledgers").document(ledger.id.uuidString).setData(ledgerData) { [weak self] error in
+            guard let self = self else { return }
+
             if let error = error {
+                print("保存账本失败: \(error)")
                 completion(error)
                 return
             }
 
-            // 在用户账本列表中添加
-            self?.db.collection("users").document(userId)
-                .collection("myLedgers")
-                .document(ledger.id.uuidString)
-                .setData(["joinedAt": Date().timeIntervalSince1970]) { _ in
-                    completion(nil)
+            print("账本保存到 ledgers 成功")
+
+            let batch = self.db.batch()
+
+            // 为 owner 创建 myLedgers 记录
+            batch.setData([
+                "ledgerId": ledger.id.uuidString,
+                "joinedAt": Date().timeIntervalSince1970
+            ], forDocument: self.db.collection("users").document(userId).collection("myLedgers").document(ledger.id.uuidString))
+
+            // 为所有已注册的参与者创建 myLedgers 记录
+            for participant in ledger.participants {
+                if let participantUserId = participant.userId, participantUserId != userId {
+                    batch.setData([
+                        "ledgerId": ledger.id.uuidString,
+                        "joinedAt": Date().timeIntervalSince1970
+                    ], forDocument: self.db.collection("users").document(participantUserId).collection("myLedgers").document(ledger.id.uuidString))
+                    print("为参与者 \(participant.name) 创建 myLedgers 记录")
                 }
+            }
+
+            batch.commit { batchError in
+                if let batchError = batchError {
+                    print("批量创建 myLedgers 失败: \(batchError)")
+                } else {
+                    print("所有 myLedgers 创建成功")
+                }
+                completion(batchError)
+            }
         }
     }
 
@@ -193,6 +254,8 @@ final class LedgerStore: ObservableObject {
         db.collection("users")
             .whereField("email", isEqualTo: normalizedEmail)
             .getDocuments { [weak self] snapshot, error in
+                guard let self = self else { return }
+
                 if let error = error {
                     completion(.failure(error))
                     return
@@ -205,6 +268,16 @@ final class LedgerStore: ObservableObject {
                 }
 
                 let memberId = doc.documentID
+                let memberData = doc.data()
+                let memberName: String
+                if let username = memberData["username"] as? String {
+                    memberName = username
+                } else if let email = memberData["email"] as? String {
+                    memberName = email.components(separatedBy: "@").first ?? "用户"
+                } else {
+                    memberName = "用户"
+                }
+
                 guard memberId != ledger.ownerId else {
                     completion(.failure(NSError(domain: "LedgerStore", code: -1,
                         userInfo: [NSLocalizedDescriptionKey: "不能添加自己为成员"])))
@@ -220,18 +293,27 @@ final class LedgerStore: ObservableObject {
                 var updatedLedger = ledger
                 updatedLedger.memberIds.append(memberId)
 
+                // 同时把成员添加到 participants 列表，保存 uid 到 userId 字段
+                let memberPerson = Person(id: UUID(), name: memberName, userId: memberId)
+                updatedLedger.participants.append(memberPerson)
+
+                // 使用批量操作更新账本和创建 myLedgers
+                let batch = self.db.batch()
+
                 // 更新账本
-                self?.updateLedger(updatedLedger) { error in
+                batch.setData(self.ledgerToData(updatedLedger), forDocument: self.db.collection("ledgers").document(ledger.id.uuidString))
+
+                // 为新成员创建 myLedgers 记录
+                batch.setData([
+                    "ledgerId": ledger.id.uuidString,
+                    "joinedAt": Date().timeIntervalSince1970
+                ], forDocument: self.db.collection("users").document(memberId).collection("myLedgers").document(ledger.id.uuidString))
+
+                batch.commit { error in
                     if let error = error {
                         completion(.failure(error))
                     } else {
-                        // 添加成员到账本列表
-                        self?.db.collection("users").document(memberId)
-                            .collection("myLedgers")
-                            .document(ledger.id.uuidString)
-                            .setData(["joinedAt": Date().timeIntervalSince1970]) { _ in
-                                completion(.success(updatedLedger))
-                            }
+                        completion(.success(updatedLedger))
                     }
                 }
             }
@@ -247,16 +329,23 @@ final class LedgerStore: ObservableObject {
         var updatedLedger = ledger
         updatedLedger.memberIds.removeAll { $0 == memberId }
 
-        updateLedger(updatedLedger) { [weak self] error in
+        // 从 participants 中移除该成员
+        updatedLedger.participants.removeAll { $0.userId == memberId }
+
+        // 使用批量操作
+        let batch = self.db.batch()
+
+        // 更新账本
+        batch.setData(self.ledgerToData(updatedLedger), forDocument: self.db.collection("ledgers").document(ledger.id.uuidString))
+
+        // 删除成员的 myLedgers 记录
+        batch.deleteDocument(self.db.collection("users").document(memberId).collection("myLedgers").document(ledger.id.uuidString))
+
+        batch.commit { error in
             if let error = error {
                 completion(.failure(error))
             } else {
-                self?.db.collection("users").document(memberId)
-                    .collection("myLedgers")
-                    .document(ledger.id.uuidString)
-                    .delete { _ in
-                        completion(.success(updatedLedger))
-                    }
+                completion(.success(updatedLedger))
             }
         }
     }
@@ -347,7 +436,8 @@ final class LedgerStore: ObservableObject {
             guard let idString = item["id"] as? String,
                   let id = UUID(uuidString: idString),
                   let name = item["name"] as? String else { return nil }
-            return Person(id: id, name: name)
+            let userId = item["userId"] as? String
+            return Person(id: id, name: name, userId: userId)
         }
     }
 
@@ -375,7 +465,14 @@ final class LedgerStore: ObservableObject {
     }
 
     private func personToData(_ person: Person) -> [String: Any] {
-        ["id": person.id.uuidString, "name": person.name]
+        var data: [String: Any] = [
+            "id": person.id.uuidString,
+            "name": person.name
+        ]
+        if let userId = person.userId {
+            data["userId"] = userId
+        }
+        return data
     }
 
     private func expenseToData(_ expense: Expense) -> [String: Any] {
