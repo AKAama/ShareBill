@@ -23,10 +23,11 @@ struct LoginView: View {
 
     private var loginView: some View {
         ScrollView {
+            dismissKeyboardGesture
             VStack(spacing: 24) {
                 Spacer().frame(height: 60)
 
-                Image(systemName: "dollarsign.circle.fill")
+                Image(systemName: "yensign.circle.fill")
                     .font(.system(size: 80))
                     .foregroundStyle(.blue)
 
@@ -34,7 +35,7 @@ struct LoginView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
 
-                Text("轻松分摊，愉快记账，myhnb,zzynb")
+                Text("轻松分摊，愉快记账，myhnb")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
 
@@ -99,6 +100,19 @@ struct LoginView: View {
         }
         .navigationBarHidden(true)
     }
+
+    // 点击空白处收起键盘
+    private var dismissKeyboardGesture: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                hideKeyboard()
+            }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
 }
 
 // MARK: - Register View
@@ -118,6 +132,7 @@ struct RegisterView: View {
 
     var body: some View {
         ScrollView {
+            dismissKeyboardGesture
             VStack(spacing: 24) {
                 Spacer().frame(height: 20)
 
@@ -308,6 +323,19 @@ struct RegisterView: View {
                 showingImagePicker = false
             }
         }
+    }
+
+    // 点击空白处收起键盘
+    private var dismissKeyboardGesture: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onTapGesture {
+                hideKeyboard()
+            }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 
     private var canRegister: Bool {

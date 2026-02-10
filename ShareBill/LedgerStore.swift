@@ -17,10 +17,17 @@ final class LedgerStore: ObservableObject {
     // MARK: - 绑定用户账本列表
 
     func bind(userId: String) {
-        guard self.userId == nil || self.userId != userId else { return }
+        // 如果同一个用户已经绑定了，不再重复绑定
+        if self.userId == userId && listener != nil {
+            print("LedgerStore.bind: 同一用户，跳过绑定")
+            return
+        }
 
-        self.userId = userId
-        stop()
+        // 如果是不同用户，先停止旧的监听
+        if self.userId != userId {
+            stop()
+            self.userId = userId
+        }
 
         print("=== LedgerStore.bind ===")
         print("userId: \(userId)")
@@ -141,9 +148,7 @@ final class LedgerStore: ObservableObject {
         currentLedgerListener?.remove()
         listener = nil
         currentLedgerListener = nil
-        userId = nil
-        ledgers = []
-        currentLedger = nil
+        // 注意：不清除 ledgers 和 currentLedger，切换 tab 时保留数据
     }
 
     // MARK: - 账本操作
